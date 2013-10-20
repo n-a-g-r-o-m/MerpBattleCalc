@@ -1,0 +1,427 @@
+<html>
+<head>
+	<title>MerpBattleCalc 1.0.0RC</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	<style>
+		#battleTable th, #battleTable td {border: 1px solid black;}
+		#battleTable th {background: red; color: white;}
+		#battleTable #players th {background: green; color: white;}
+		#battleTable #exps td {background: green; color: white; text-align: center;}
+		#battleTable tbody td {cursor: pointer;}
+		.level:before {content: " (";}
+		.level:after {content: ")";}
+	   
+	   
+		#battleTable tr.dead th {text-decoration: line-through;}
+		#battleTable tr.dead td {background: lightgray; cursor: auto;}
+	   
+		#dialogOverlay{
+			background: rgba(0, 0, 0, 0.5);	
+			width: 100%;
+			height: 100%;
+			top: 0;
+			left: 0;
+			position: absolute;	 
+			z-index: 10;
+		}   
+		.dialog {
+			background: white;
+			border: 1px solid black;
+			border-radius: 10px;
+			display: inline-block;
+			top: 0;
+			left: 0;
+			position: absolute;	 
+			z-index: 15;	 
+		}
+		.dialogHeader {
+			background: black;
+			color: white;
+			border-radius: 9px 9px 0 0;
+			padding: 4px;
+		}
+		.dialogContent {
+			padding: 8px;
+		}
+		.dialogFooter {
+			padding: 4px;
+		}
+		.dialogButton{
+			margin: 4px;
+		}
+	</style>
+<script type="text/javascript">
+	var db = {
+		'players': [], //[playerId] = {name, level, expPerEnemy, expBank}
+		'enemies': [], //[enemyId] = {name, level, lostHp}
+		'hits': [] //[playerId][enemyId][i] = {damage, criticals, dies}
+	};
+	
+	window.onload = function() {
+		var storedDb = localStorage.getItem('KerpDamageExpCalculatorDB');
+		if(storedDb != null) {
+			localStorage.setItem('Auto saved', JSON.stringify(JSON.parse(storedDb)));
+			localStorage.removeItem('KerpDamageExpCalculatorDB');
+		}
+		storedDb = localStorage.getItem('DB');
+		if(storedDb != null) {
+			localStorage.removeItem('DB');
+		}
+		
+		var select = document.getElementById("loadName");
+		for (var i = 0; i < localStorage.length; i++){
+			var option = document.createElement('option');
+			option.value = localStorage.key(i);
+			option.innerHTML = localStorage.key(i);
+			select.add(option, null);
+		}
+		loadDb('Auto saved');
+		draw();
+	}
+   
+	function loadDb(name) {
+		storedDb = localStorage.getItem(name);
+		if(storedDb != null) {			
+			db = JSON.parse(storedDb);
+		}
+		document.getElementById("saveName").value = name;
+		draw();
+	}
+   
+	function saveDb(name) {
+		localStorage.setItem(name, JSON.stringify(db));
+		
+		var select = document.getElementById("loadName");
+		select.options.length = 0;
+		for (var i = 0; i < localStorage.length; i++){
+			var option = document.createElement('option');
+			option.value = localStorage.key(i);
+			option.innerHTML = localStorage.key(i);
+			select.add(option, null);
+			if(localStorage.key(i) === name)
+				select.selectedIndex = i;
+		}
+		
+	}
+   
+	function draw() {
+		//Init
+		document.getElementById("battleTable").innerHTML = 
+	    '<thead> \
+			<tr id="players"> \
+				<th style="background: black; color: white; text-align: right;">Name (level):</th> \
+			</tr> \
+			<tr id="exps"> \
+				<th style="background: black; color: white; text-align: right;">Exp:</th> \
+			</tr> \
+	    </thead> \
+	    <tbody> \
+	    </tbody>'
+		
+		//Players		
+		for(var playerId = 0; playerId < db.players.length; playerId++) {
+			var playerHeaderCell = document.createElement('th');
+			playerHeaderCell.innerHTML = db.players[playerId].name + '<span class="level">' + db.players[playerId].level + '</span>';
+			document.getElementById("players").appendChild(playerHeaderCell);
+
+			var playerExpCell = document.createElement('td');
+			playerExpCell.innerHTML = '0';
+			document.getElementById("exps").appendChild(playerExpCell);
+		}
+		
+		//Enemies	
+		for(var enemyId = 0; enemyId < db.enemies.length; enemyId++) {
+			var enemyRow = document.createElement('tr');
+			var enemyHeaderCell = document.createElement('th');
+			enemyHeaderCell.innerHTML = db.enemies[enemyId].name + '<span class="level">' + db.enemies[enemyId].level + '</span><br/>Damage: <span class="lostHp">0</span>';
+			enemyRow.appendChild(enemyHeaderCell)
+				
+			for(var playerId = 0; playerId < db.players.length; playerId++) {
+				var hitTargetCell = document.createElement('td');
+				hitTargetCell.id = "" + playerId + "," + enemyId
+				hitTargetCell.setAttribute("onclick", "addHitClicked(" + hitTargetCell.id + "); return false;")
+				enemyRow.appendChild(hitTargetCell);
+			}
+
+			document.getElementById("battleTable").getElementsByTagName("tbody")[0].appendChild(enemyRow);
+		}
+
+		//Hits
+		for(var playerId = 0; playerId < db.players.length; playerId++) {
+			for(var enemyId = 0; enemyId < db.enemies.length; enemyId++) {
+				var hits = db.hits[playerId][enemyId];
+				for(var i = 0; i < hits.length; i++) {
+					document.getElementById(playerId + "," + enemyId).innerHTML += hits[i].damage + hits[i].criticals + (hits[i].dies ? "✓" : "") + ", ";
+
+					var enemyRow = document.getElementById("battleTable").getElementsByTagName("tbody")[0].getElementsByTagName("tr")[enemyId];
+					enemyRow.getElementsByClassName("lostHp")[0].innerHTML = db.enemies[enemyId].lostHp
+
+					if(hits[i].dies) {
+						enemyRow.className = "dead"
+						for(var i = 0; i < enemyRow.getElementsByTagName("td").length; i++) {
+							enemyRow.getElementsByTagName("td")[i].removeAttribute('onclick');
+						}
+					}
+				}
+			}
+			document.getElementById("exps").getElementsByTagName("td")[playerId].innerHTML = countTotalExp(db.players[playerId])
+		}
+	}
+   
+	function showDialog(title, content, okFunction) {
+		var dialogContainer = document.createElement('div');
+		dialogContainer.id  = "dialogOverlay";
+		dialogContainer.innerHTML = '<div class="dialog"><div class="dialogHeader"></div><div class="dialogContent"></div><div class="dialogFooter"></div></div>'
+		
+		dialogContainer.getElementsByClassName("dialogHeader")[0].innerHTML = title;
+		dialogContainer.getElementsByClassName("dialogContent")[0].innerHTML = content;
+		dialogContainer.getElementsByClassName("dialogFooter")[0].innerHTML ='<a class="dialogButton dialogButtonOk" href="javascript:void(0)">OK</a><a class="dialogButton dialogButtonCancel" href="javascript:void(0)">Cancel</a>';
+		
+		dialogContainer.getElementsByClassName("dialogButtonOk")[0].onclick = function() {okFunction(); var elem = document.getElementById('dialogOverlay');elem.parentNode.removeChild(elem);return false;}
+		dialogContainer.getElementsByClassName("dialogButtonCancel")[0].onclick = function() {var elem = document.getElementById('dialogOverlay');elem.parentNode.removeChild(elem);return false;}
+
+		document.getElementsByTagName("body")[0].appendChild(dialogContainer);
+	}   
+   
+	function countExpFromCritical(enemyLevel, criticals) {
+		var exp = 0;
+		if(criticals.length>0) {
+			for(var i = 0; i < criticals.length; i++) {
+				if(enemyLevel == 0) {
+					var criticalValue = criticals.charCodeAt(i)-64
+					exp += criticalValue*3 + ((criticalValue%2)-1)*criticalValue/2 + (((criticalValue-1)%2)-1)*(criticalValue-1)/2;
+				} else {
+					exp += (criticals.charCodeAt(i)-64)*5*enemyLevel;
+				}
+			}
+		}
+		return exp;
+	}
+	
+	function countExpFromKill(playerLevel, enemyLevel) {
+		var exp = 0
+		if(enemyLevel == 0) {
+			exp = 50 - ((playerLevel-1)*5);
+		} else if (enemyLevel >= playerLevel) {
+			exp = 200 + ((enemyLevel-playerLevel)*50);
+		} else {
+			if(playerLevel - enemyLevel == 1)
+				exp = 200 - ((playerLevel-enemyLevel)*50);
+			else if(playerLevel - enemyLevel <= 3)
+				exp = 150 - (((playerLevel-1)-enemyLevel)*20);
+			else if(playerLevel - enemyLevel <= 9)
+				exp = 110 - (((playerLevel-3)-enemyLevel)*10);
+			else
+				exp = 50 - (((playerLevel-9)-enemyLevel)*5);
+		}
+		if(exp < 0) {
+			exp = 0;
+		}
+		return exp;
+	}
+	
+	function countTotalExp(player) {
+		var exp = 0;
+		for(var enemyId = 0; enemyId < player.expPerEnemy.length; enemyId++) {
+			exp += player.expPerEnemy[enemyId];	
+		}
+		return exp + player.expBank;
+	}
+	
+	function addPlayer(name, level) {
+		var playerId = db.players.length;
+		db.players.push({
+			'name': name,
+			'level': level,
+			'expPerEnemy': [],
+			'expBank': 0
+		});
+		db.hits.push([]);
+		for(var enemyId = 0; enemyId < db.enemies.length; enemyId++) {
+			db.players[playerId].expPerEnemy[enemyId] = 0;
+			db.hits[playerId][enemyId] = [];
+		}
+
+		saveDb('Auto saved')
+		draw();
+	}
+   
+	function addEnemy(name, level) {
+		var enemyId = db.enemies.length;
+		db.enemies.push({
+			'name': name,
+			'level': level,
+			'lostHp': 0
+		});
+		
+		for(var playerId = 0; playerId < db.players.length; playerId++) {
+			db.players[playerId].expPerEnemy[enemyId] = 0;
+			db.hits[playerId][enemyId] = [];
+		}
+		
+		saveDb('Auto saved')
+		draw();
+   }
+   
+	function addHit(playerId, enemyId, damage, criticals, dies) {
+		db.hits[playerId][enemyId].push({
+			'damage': damage,
+			'criticals': criticals,
+			'dies': dies
+		});
+		db.enemies[enemyId].lostHp += damage*1;
+		
+		criticals = criticals.toUpperCase();
+		db.players[playerId].expPerEnemy[enemyId] += countExpFromCritical(db.enemies[enemyId].level, criticals);
+
+		var killExp = countExpFromKill(db.players[playerId].level, db.enemies[enemyId].level);
+
+		if(db.players[playerId].expPerEnemy[enemyId] > killExp) {
+			db.players[playerId].expPerEnemy[enemyId] = killExp;
+		}
+
+		if(dies) {
+			db.players[playerId].expPerEnemy[enemyId] += killExp;
+		}
+		
+		saveDb('Auto saved')
+		draw();
+	}
+	
+	function reset(resetHits, resetExps, resetEnemies, resetPlayers) {
+		if(resetPlayers) {
+			db.players = [];
+		}
+		if(resetEnemies) {
+			db.enemies = [];			
+			for(var playerId = 0; playerId < db.players.length; playerId++) {
+				db.players[playerId].expBank = countTotalExp(db.players[playerId]);
+				db.players[playerId].expPerEnemy = [];
+			}
+		}
+		if(resetExps) {			
+			for(var playerId = 0; playerId < db.players.length; playerId++) {
+				db.players[playerId].expBank = 0;
+				db.players[playerId].expPerEnemy = [];
+				for(var enemyId = 0; enemyId < db.enemies.length; enemyId++) {
+					db.players[playerId].expPerEnemy[enemyId] = 0;	
+				}
+			}			
+		}
+		if(resetHits) {
+			for(var enemyId = 0; enemyId < db.enemies.length; enemyId++) {
+				db.enemies[enemyId].lostHp = 0;	
+			}
+			db.hits = [];
+			for(var playerId = 0; playerId < db.players.length; playerId++) {
+				db.hits[playerId] = [];
+				for(var enemyId = 0; enemyId < db.enemies.length; enemyId++) {
+					db.hits[playerId][enemyId] = [];	
+				}
+			}	
+		}
+		saveDb('Auto saved')
+		draw();
+	}
+   
+	function loadDbClicked() {
+		var select = document.getElementById("loadName");
+		var dbName = select.options[select.selectedIndex].value;
+		loadDb(dbName);
+	}
+	
+	function saveDbClicked() {
+		saveDb(document.getElementById("saveName").value);
+	}
+	
+	function addPlayerClicked() {
+		showDialog("Add player",
+		          'Name: <input type="text" value="Player" name="name"><br>Level: <input type="number" name="level" value="1" min="0" max="500">',
+				  function(){
+					addPlayer(document.getElementsByName("name")[0].value, document.getElementsByName("level")[0].value);
+				  }
+		);
+	}
+
+	function addEnemyClicked() {
+		showDialog("Add enemy",
+				   'Name: <input type="text" value="Orc" name="name"><br>Level: <input type="number" name="level" value="1" min="0" max="500">',
+				   function(){
+						addEnemy(document.getElementsByName("name")[0].value, document.getElementsByName("level")[0].value);
+					}
+		);
+	}
+	
+	function addHitClicked(playerId, enemyId) {
+		showDialog(db.players[playerId].name + " hits " + db.enemies[enemyId].name + " (" + db.enemies[enemyId].level + ")", 
+				   'Damage: <input type="number" name="dmg" value="0" min="0">Criticals: <input type="text" name="crit"> <input type="checkbox" name="dies">dies',
+				   function(){
+						addHit(playerId,
+							   enemyId,
+							   document.getElementsByName("dmg")[0].value,
+							   document.getElementsByName("crit")[0].value,
+							   document.getElementsByName("dies")[0].checked
+						);
+				   }
+		);
+	}
+
+	function resetClicked() {
+		showDialog("Reset",
+				   '<input type="checkbox" name="resetHits"> Hits</br><input type="checkbox" name="resetExps"> Exps</br><input type="checkbox" name="resetEnemies"> Enemies</br><input type="checkbox" name="resetPlayers"> Players</br>',
+				   function(){
+						reset(document.getElementsByName("resetHits")[0].checked,
+							  document.getElementsByName("resetExps")[0].checked,
+							  document.getElementsByName("resetEnemies")[0].checked,
+							  document.getElementsByName("resetPlayers")[0].checked);
+					}
+		);
+		var resetHits = document.getElementsByName("resetHits")[0];
+		var resetExps = document.getElementsByName("resetExps")[0];
+		var resetEnemies = document.getElementsByName("resetEnemies")[0];
+		var resetPlayers = document.getElementsByName("resetPlayers")[0];
+		
+		//If resetExp is selected, then resetHits have to be selected
+		resetExps.onclick = function(event) {
+			if(event.target.checked) {
+				resetHits.checked = true;
+				resetHits.disabled = true;
+			} else {
+				resetHits.disabled = false;			
+			}
+		}
+		//If resetEnemies is selected, then resetHits have to be selected
+		resetEnemies.onclick = function(event) {
+			if(event.target.checked) {
+				resetHits.checked = true;
+				resetHits.disabled = true;
+			} else {
+				resetHits.disabled = false;			
+			}
+		}
+		//If resetPlayers is selected, then resetHits and resetExps have to be selected
+		resetPlayers.onclick = function(event) {
+			if(event.target.checked) {
+				resetHits.checked = true;
+				resetHits.disabled = true;
+				resetExps.checked = true;
+				resetExps.disabled = true;
+			} else {
+				resetHits.disabled = false;	
+				resetExps.disabled = false;			
+			}
+		}
+	}
+</script>
+ 
+ </head>
+ <body>
+	<select id="loadName"></select><a href="javascript:void(0)" onclick="loadDbClicked(); return false;">Load</a><br/>
+	<input type="text" id="saveName"><a href="javascript:void(0)" onclick="saveDbClicked(); return false;">Save</a><br/>
+	<table id="battleTable">
+	</table>
+	<a href="javascript:void(0)" onclick="addPlayerClicked(); return false;">Add player</a>
+	<a href="javascript:void(0)" onclick="addEnemyClicked(); return false;">Add enemy</a>
+	<a href="javascript:void(0)" onclick="resetClicked(); return false;">Reset</a>
+</body>
+</html>
